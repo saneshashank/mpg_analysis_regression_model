@@ -1,0 +1,171 @@
+---
+title: "Regression Models Project - mpg analysis"
+author: "Shashank Sane"
+date: "April 1, 2017"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+This article explores the relationship between mpg and other variables based on the mtcars data set present in R.The analysis answers the following questions based on regression model analysis: 
+
+1. is an automatic or manual transmission better for MPG.
+2. Quantify the MPG difference between automatic and manual transmissions.
+
+The conclusion reached on the basis of analysis below is that manual transmission is better for MPG and using our constructed model we have calculated 95% confidence interval for increase in mpg for change in manual to automatic transmission mode.
+
+### 
+load required libraries
+```{r chunk1}
+library(ggplot2)
+library(knitr)
+```
+
+###
+based on the help file in R, the mtcars data set consists of the following variables:
+
+* [, 1]	 mpg	 Miles/(US) gallon
+* [, 2]	 cyl	 Number of cylinders
+* [, 3]	 disp	 Displacement (cu.in.)
+* [, 4]	 hp	 Gross horsepower
+* [, 5]	 drat	 Rear axle ratio
+* [, 6]	 wt	 Weight (1000 lbs)
+* [, 7]	 qsec	 1/4 mile time
+* [, 8]	 vs	 V/S
+* [, 9]	 am	 Transmission (0 = automatic, 1 = manual)
+* [,10]	 gear	 Number of forward gears
+* [,11]	 carb	 Number of carburetors
+
+### 
+Check the mtcars dataset
+```{r chunk2}
+# mtcars summary
+str(mtcars)
+
+# plot mtcars to see relatioship between various variables
+plot(mtcars)
+
+# convert am into factor variable
+mtcars1 <- mtcars
+mtcars1$am <- as.factor(mtcars1$am)
+
+# let us also plot graph between mpg and am (transmission mode)
+g <- ggplot(data=mtcars1,mapping=aes(x=am,y=mpg,color=am))+geom_boxplot(aes(group=am))
+g <- g+geom_point(alpha = 0.5)
+g <- g +xlab("Transmission Mode(am)")+ylab("Miles Per Gallon (mpg)")+ggtitle("miles per gallon vs. transmission mode")
+g
+
+```
+
+## Model Creation and variable selection:
+
+from the above it is seen that there is an increase in mean mpg for automatic transmission mode, however we cannot be certain of the relationship as there are multiple other variables involved.Intuitively we also know that weight (wt) should also impact mpg. From the plot above for mtcars we do see that there is linear relationship between mpg and multiple other variables, so we would model mpg and other variables via multiple linear regression model. We would follow the following process to deduce which are the important variables to include as predictors in our model:
+
+1.  Create regression model for mpg with all other variables.
+2.  Remove the variables which have high p values.
+3.  Create regression model the subset of variables remaining.
+4.  Follow steps 2 and 3 until the p values for remaining variables in the model is < 0.05
+
+### 
+Model selection:
+```{r chunk3}
+
+# iteration 1
+# create model with all variables
+summary(lm(mpg~.,mtcars))
+
+# iteration 2
+# create model after removing cyl (p value 0.92),vs (p value 0.81) and carb (p value 0.81)
+summary(lm(mpg~wt+disp+hp+drat+qsec+am+gear,mtcars))
+
+# iteration 3
+# create model after removing gear (p value 0.62) and drat (p value 0.58)
+summary(lm(mpg~wt+disp+hp+qsec+am,mtcars))
+
+# iteration 4
+# create model after removing disp (p value 0.29)
+summary(lm(mpg~wt+hp+qsec+am,mtcars))
+
+# we will also remove hp (p value 0.22) to arrive at out model
+fit <- lm(mpg~wt+qsec+factor(am),mtcars)
+```
+
+###
+So we have arrived at our final set of variables for model - **wt,qsec and am**. What if there is no impact of am on mpg, lets do an anova analysis to determine the same.
+
+```{r chunk4}
+
+# model without transmission mode (am)w
+fit1 <- lm(mpg~wt+qsec,mtcars)
+
+fit <- lm(mpg~wt+qsec+factor(am),mtcars)
+
+# analysis of variance
+anova(fit1,fit)
+
+```
+###
+since the p value after including am is < 0.05 so we would include am in our model.
+get the model summary and plot the model diagnostics below
+```{r chunk5}
+
+# get the summary of the model
+summary(fit)
+
+# get the diagnostic plots for the model
+par(mfrow=c(2,2),mar=c(4,4,2,1), oma=c(0,0,2,0))
+plot(fit)
+
+# The residual vs fitted plot does not show any pattern and also the Q-Q plot shows that data is pretty close to normal distribution, hence our assumption for linear model is correct.
+
+# get the confidence interval based on t statistic
+coeff <- summary(fit)$coefficients
+coeff[4,1]+c(-1,1)*qt(0.975,df=fit$df)*coeff[4,2]
+
+```
+
+## Conclusion:
+
+The model does suggest (with 95% confidence interval) that change in transmission mode from manual to automatic results in a **`r round(coeff[4,1]+c(-1)*qt(0.975,df=fit$df)*coeff[4,2],2)`** to  **`r round(coeff[4,1]+c(1)*qt(0.975,df=fit$df)*coeff[4,2],2)`** increase in miles per gallon(mpg.)
+
+
+## Testing model accuracy
+
+In the section below we would also test the prediction accuracy of our model by dividing mtcars data into training and testing data.
+```{r chunk6}
+set.seed(1)
+
+# get number size for 80% of data
+training_data_size <- floor(0.80*nrow(mtcars))
+
+# randomly select training data row index
+mtcars.train_index <- sample(1:nrow(mtcars),training_data_size)
+
+# create training data set
+mtcars.train <- mtcars[mtcars.train_index,]
+
+# create test data set
+mtcars.test <- mtcars[-mtcars.train_index,]
+
+# create model based on training data
+fit <- lm(mpg~wt+qsec+factor(am),mtcars.train)
+
+# get the predicted values based on test data
+predicted.mpg <- predict(fit,newdata = mtcars.test)
+
+# get the residual error
+error_precentage <- ((predicted.mpg -mtcars.test$mpg)*100)/mtcars.test$mpg
+
+# calculate the error percentage.
+100 - mean(abs(error_precentage))
+
+```
+
+###
+Thus our constructed model has a prediction accuracy of **`r round(100 - mean(abs(error_precentage)),2)` %**
